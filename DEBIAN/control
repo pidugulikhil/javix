@@ -1,0 +1,5 @@
+Package: javix
+Version: 1.0
+Architecture: all
+Maintainer: CYBREIGN
+Description: Java Virtual X Execution runtime for Termux

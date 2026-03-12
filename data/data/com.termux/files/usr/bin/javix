@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+
+VERSION="1.0"
+
+VNC_PORT=5901
+FTP_PORT=2121
+DISPLAY_NUM=":1"
+
+########################################
+msg() { echo "[javix] $1"; }
+########################################
+
+show_version() {
+ echo "javix $VERSION"
+}
+
+########################################
+# HELP
+########################################
+
+help() {
+
+cat <<EOF
+
+javix — Java Virtual X Execution
+
+Usage:
+
+  javix init java
+
+  javix start vnc
+  javix stop vnc
+
+  javix start display
+  javix stop display
+
+  javix start ftp
+  javix stop ftp
+
+  javix status
+  javix --version
+  javix help
+
+Examples:
+
+  javix start vnc
+  javix start display
+  javix start ftp
+
+EOF
+
+}
+
+########################################
+# CHECK RUNNING
+########################################
+
+vnc_running() {
+ pgrep Xtigervnc >/dev/null
+}
+
+ftp_running() {
+ pgrep tcpsvd >/dev/null
+}
+
+flux_running() {
+ pgrep fluxbox >/dev/null
+}
+
+########################################
+# VNC
+########################################
+
+start_vnc() {
+
+if vnc_running; then
+ msg "VNC already running on port $VNC_PORT"
+ return
+fi
+
+msg "starting VNC server..."
+
+vncserver $DISPLAY_NUM >/dev/null
+
+msg "VNC server started"
+
+echo
+echo "Connection details:"
+echo "  Host: 127.0.0.1"
+echo "  Port: $VNC_PORT"
+echo
+echo "Use any VNC client (RealVNC, bVNC, etc)"
+echo
+
+}
+
+stop_vnc() {
+
+if ! vnc_running; then
+ msg "VNC server not running"
+ return
+fi
+
+msg "stopping VNC server..."
+
+vncserver -kill $DISPLAY_NUM >/dev/null
+
+msg "VNC server stopped"
+
+}
+
+########################################
+# DISPLAY / GUI
+########################################
+
+start_display() {
+
+if flux_running; then
+ msg "GUI already running"
+ return
+fi
+
+msg "starting GUI (fluxbox)..."
+
+export DISPLAY=$DISPLAY_NUM
+
+fluxbox >/dev/null 2>&1 &
+
+msg "GUI ready"
+
+}
+
+stop_display() {
+
+if ! flux_running; then
+ msg "GUI not running"
+ return
+fi
+
+msg "stopping GUI..."
+
+pkill fluxbox
+
+msg "GUI stopped"
+
+}
+
+########################################
+# FTP
+########################################
+
+start_ftp() {
+
+if ftp_running; then
+ msg "FTP server already running on port $FTP_PORT"
+ return
+fi
+
+msg "starting FTP server..."
+
+busybox tcpsvd -vE 0.0.0.0 $FTP_PORT busybox ftpd -w $HOME >/dev/null 2>&1 &
+
+echo
+echo "FTP server running"
+echo
+echo "Connection details:"
+echo "  Host: 127.0.0.1"
+echo "  Port: $FTP_PORT"
+echo "  Username: (not required)"
+echo "  Password: (not required)"
+echo
+echo "Android client example:"
+echo "  SuperFTP / Mixplorer / CX File Explorer"
+echo
+
+}
+
+stop_ftp() {
+
+if ! ftp_running; then
+ msg "FTP server not running"
+ return
+fi
+
+msg "stopping FTP server..."
+
+pkill tcpsvd
+
+msg "FTP server stopped"
+
+}
+
+########################################
+# STATUS
+########################################
+
+status() {
+
+echo
+echo "JAVIX SERVICE STATUS"
+echo "--------------------"
+
+if vnc_running; then
+ echo "VNC: running (port $VNC_PORT)"
+else
+ echo "VNC: stopped"
+fi
+
+if flux_running; then
+ echo "GUI: running"
+else
+ echo "GUI: stopped"
+fi
+
+if ftp_running; then
+ echo "FTP: running (port $FTP_PORT)"
+else
+ echo "FTP: stopped"
+fi
+
+echo
+
+}
+
+########################################
+# CLI
+########################################
+
+case "$1" in
+
+start)
+
+ case "$2" in
+  vnc) start_vnc ;;
+  display|gui) start_display ;;
+  ftp|files) start_ftp ;;
+  *) help ;;
+ esac
+
+;;
+
+stop)
+
+ case "$2" in
+  vnc) stop_vnc ;;
+  display|gui) stop_display ;;
+  ftp|files) stop_ftp ;;
+  *) help ;;
+ esac
+
+;;
+
+status)
+ status
+;;
+
+--version)
+ show_version
+;;
+
+help)
+ help
+;;
+
+*)
+ help
+;;
+
+esac
