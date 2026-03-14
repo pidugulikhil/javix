@@ -5,7 +5,7 @@ Maintainer: Pidugu Likhil <pidugulikhil@gmail.com>
 Organization: CYBREIGN
 Section: utils
 Priority: optional
-Depends: bash, curl, busybox, wget
+Depends: bash, curl
 Installed-Size: 48
 Homepage: https://github.com/pidugulikhil/javix
 Description: Java Virtual X Execution runtime for Termux

@@ -1,2 +1,2 @@
 #!/data/data/com.termux/files/usr/bin/bash
-chmod +x /data/data/com.termux/files/usr/bin/javix
+chmod +x $PREFIX/bin/javix
