@@ -1,0 +1,552 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+VERSION="1.2"
+
+DEFAULT_FTP_PORT=2121
+DISPLAY_NUM=":1"
+
+JAVIX_HOME="$HOME/.cybreign/javix"
+JAVA_DIR="$JAVIX_HOME/java8"
+JAVA_TAR="OpenJDK8U-jdk_aarch64_linux_hotspot_8u412b08.tar.gz"
+JAVA_URL="https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/$JAVA_TAR"
+SETUP_MARKER="$JAVIX_HOME/.setup_complete"
+LOG_DIR="$JAVIX_HOME/logs"
+
+msg(){  printf '[javix] %s\n' "$1"; }
+err(){  printf '[javix] ERROR: %s\n' "$1" >&2; }
+ok(){   printf '[javix] ✓ %s\n' "$1"; }
+warn(){ printf '[javix] WARN: %s\n' "$1"; }
+
+########################################
+# HELP
+########################################
+
+help(){
+cat <<EOF
+
+javix v$VERSION — Java Virtual X Execution
+
+Usage:
+
+  javix init java
+
+  javix start   display|gui|vnc
+  javix stop    display|gui|vnc
+  javix restart display|gui|vnc
+
+  javix start   ftp|files [--port PORT]
+  javix stop    ftp|files
+  javix restart ftp|files [--port PORT]
+
+  javix restart all
+
+  javix status
+  javix status gui
+  javix status ftp
+  javix status java
+  javix status all
+
+  javix logs gui
+  javix logs ftp
+
+  javix setup          — force re-run full setup
+  javix setup check    — check what is/isn't installed
+  javix setup reset    — wipe setup marker (force reinstall on next run)
+  javix setup java     — reinstall Java 8 only
+
+  javix killall
+  javix --version
+
+EOF
+}
+
+########################################
+# ENVIRONMENT
+########################################
+
+setup_env(){
+  export LD_LIBRARY_PATH="$JAVA_DIR/jre/lib/aarch64/jli:$JAVA_DIR/jre/lib/aarch64:$JAVA_DIR/jre/lib/aarch64/server${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export PATH="$JAVA_DIR/bin:$PATH"
+}
+
+########################################
+# DEPENDENCY CHECK & AUTO-SETUP
+########################################
+
+check_setup_needed(){
+  [ ! -f "$SETUP_MARKER" ]          && return 0
+  [ ! -d "$JAVA_DIR" ]              && return 0
+  [ ! -f "$JAVA_DIR/.compiled" ]    && return 0
+  command -v grun      >/dev/null 2>&1 || return 0
+  command -v vncserver >/dev/null 2>&1 || return 0
+  command -v fluxbox   >/dev/null 2>&1 || return 0
+  command -v busybox   >/dev/null 2>&1 || return 0
+  command -v wget      >/dev/null 2>&1 || return 0
+  return 1
+}
+
+setup_check(){
+  echo
+  echo "JAVIX SETUP CHECK"
+  echo "-----------------"
+  [ -f "$SETUP_MARKER" ]         && ok "setup marker"           || warn "setup marker missing"
+  [ -d "$JAVA_DIR" ]             && ok "Java 8 directory"       || warn "Java 8 not installed"
+  [ -f "$JAVA_DIR/.compiled" ]   && ok "Java binaries compiled" || warn "Java binaries not compiled"
+  command -v grun      >/dev/null 2>&1 && ok "grun"      || warn "grun not found"
+  command -v vncserver >/dev/null 2>&1 && ok "vncserver" || warn "vncserver not found"
+  command -v fluxbox   >/dev/null 2>&1 && ok "fluxbox"   || warn "fluxbox not found"
+  command -v busybox   >/dev/null 2>&1 && ok "busybox"   || warn "busybox not found"
+  command -v wget      >/dev/null 2>&1 && ok "wget"       || warn "wget not found"
+  [ -f "$HOME/.vnc/passwd" ]     && ok "VNC password set"      || warn "VNC password not set  (run: vncpasswd)"
+  echo
+}
+
+run_setup(){
+  mkdir -p "$LOG_DIR"
+
+  msg "setting up Termux storage..."
+  termux-setup-storage || true
+  sleep 2
+
+  msg "installing wget..."
+  pkg install -y wget
+
+  msg "installing x11-repo..."
+  pkg install -y x11-repo
+
+  msg "installing glibc-repo..."
+  pkg install -y glibc-repo
+
+  msg "installing glibc-runner..."
+  pkg install -y glibc-runner
+
+  msg "installing libx11-glibc..."
+  pkg install -y libx11-glibc
+
+  msg "installing freetype-glibc fontconfig-glibc..."
+  pkg install -y freetype-glibc fontconfig-glibc
+
+  msg "installing libxext-glibc libxtst-glibc libxrender-glibc libxi-glibc..."
+  pkg install -y libxext-glibc libxtst-glibc libxrender-glibc libxi-glibc
+
+  msg "installing fluxbox..."
+  pkg install -y fluxbox
+
+  msg "installing tigervnc..."
+  pkg install -y tigervnc
+
+  msg "installing busybox..."
+  pkg install -y busybox
+
+  setup_java
+  setup_bashrc
+
+  mkdir -p "$JAVIX_HOME"
+  touch "$SETUP_MARKER"
+
+  ok "setup complete!"
+}
+
+setup_java(){
+  mkdir -p "$JAVIX_HOME"
+  cd "$JAVIX_HOME" || { err "cannot enter $JAVIX_HOME"; exit 1; }
+
+  if [ ! -d "$JAVA_DIR" ]; then
+    msg "downloading Java 8..."
+    wget -q --show-progress "$JAVA_URL" -O "$JAVA_TAR"
+
+    msg "extracting Java 8..."
+    tar -xf "$JAVA_TAR"
+
+    mv jdk8u412-b08 java8
+    rm -f "$JAVA_TAR"
+
+    ok "Java 8 extracted to $JAVA_DIR"
+  else
+    msg "Java 8 already present — skipping download"
+  fi
+
+  setup_env
+
+  if [ ! -f "$JAVA_DIR/.compiled" ]; then
+    msg "compiling Java binaries with grun..."
+    cd "$JAVA_DIR/bin" || { err "cannot enter $JAVA_DIR/bin"; exit 1; }
+    for file in *; do
+      [ -f "$file" ] && [ -x "$file" ] && grun -c -f "./$file"
+    done
+    touch "$JAVA_DIR/.compiled"
+    ok "Java binaries compiled"
+  else
+    msg "Java binaries already compiled"
+  fi
+}
+
+setup_bashrc(){
+  touch "$HOME/.bashrc"
+
+  if ! grep -q 'javix/java8/jre/lib/aarch64' "$HOME/.bashrc" 2>/dev/null; then
+    echo 'export LD_LIBRARY_PATH="$HOME/.cybreign/javix/java8/jre/lib/aarch64/jli:$HOME/.cybreign/javix/java8/jre/lib/aarch64:$HOME/.cybreign/javix/java8/jre/lib/aarch64/server${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' >> "$HOME/.bashrc"
+  fi
+
+  if ! grep -q 'javix/java8/bin' "$HOME/.bashrc" 2>/dev/null; then
+    echo 'export PATH="$HOME/.cybreign/javix/java8/bin:$PATH"' >> "$HOME/.bashrc"
+  fi
+
+  if ! grep -q 'alias javainit' "$HOME/.bashrc" 2>/dev/null; then
+    echo 'alias javainit="grun -s"' >> "$HOME/.bashrc"
+  fi
+}
+
+ensure_setup(){
+  if check_setup_needed; then
+    msg "dependencies missing — running full setup..."
+    run_setup
+  fi
+  setup_env
+}
+
+########################################
+# AUTO-SETUP ON FIRST RUN
+########################################
+
+if check_setup_needed; then
+  msg "first run detected — installing all dependencies..."
+  run_setup
+fi
+setup_env
+
+########################################
+# GUI STACK
+########################################
+
+gui_running(){
+  pgrep -f Xtigervnc >/dev/null 2>&1 || pgrep -f "Xvnc.*:1" >/dev/null 2>&1
+}
+
+_gui_kill(){
+  vncserver -kill :1 >/dev/null 2>&1 || true
+  vncserver -kill :2 >/dev/null 2>&1 || true
+  pkill -f Xtigervnc >/dev/null 2>&1 || true
+  pkill -x fluxbox   >/dev/null 2>&1 || true
+  rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+  sleep 1
+}
+
+_gui_start(){
+  mkdir -p "$LOG_DIR"
+
+  vncserver :1 \
+    -geometry 1280x720 \
+    -depth 24 \
+    -localhost no \
+    >"$LOG_DIR/vnc.log" 2>&1
+
+  sleep 2
+
+  export DISPLAY=:1
+  DISPLAY=:1 fluxbox >>"$LOG_DIR/fluxbox.log" 2>&1 &
+
+  sleep 2
+}
+
+start_gui(){
+  ensure_setup
+
+  if gui_running; then
+    msg "GUI already running (port 5901)"
+    return
+  fi
+
+  msg "starting GUI..."
+  _gui_kill
+  _gui_start
+
+  if gui_running; then
+    ok "GUI ready → connect via VNC viewer: localhost:5901"
+  else
+    err "GUI failed to start"
+    msg "  check logs : javix logs gui"
+    msg "  manual test: vncserver :1"
+    msg "  reset pass : vncpasswd"
+  fi
+}
+
+stop_gui(){
+  if gui_running; then
+    msg "stopping GUI..."
+    _gui_kill
+    ok "GUI stopped"
+  else
+    msg "GUI already stopped"
+  fi
+}
+
+restart_gui(){
+  msg "restarting GUI..."
+  _gui_kill
+  _gui_start
+
+  if gui_running; then
+    ok "GUI restarted → localhost:5901"
+  else
+    err "GUI failed to restart"
+    msg "  check logs: javix logs gui"
+  fi
+}
+
+########################################
+# FTP
+########################################
+
+ftp_running(){
+  pgrep -f "tcpsvd.*ftpd" >/dev/null 2>&1
+}
+
+_ftp_kill(){
+  pkill -f "tcpsvd.*ftpd" >/dev/null 2>&1 || true
+  sleep 1
+}
+
+_ftp_start(){
+  local port="$1"
+  mkdir -p "$LOG_DIR"
+  busybox tcpsvd -vE 0.0.0.0 "$port" busybox ftpd -w "$HOME" \
+    >>"$LOG_DIR/ftp.log" 2>&1 &
+  sleep 1
+}
+
+_parse_ftp_port(){
+  local port="$DEFAULT_FTP_PORT"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port) port="${2:-$DEFAULT_FTP_PORT}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  echo "$port"
+}
+
+start_ftp(){
+  ensure_setup
+  local port
+  port="$(_parse_ftp_port "$@")"
+
+  if ftp_running; then
+    msg "FTP already running"
+    return
+  fi
+
+  msg "starting FTP server on port $port..."
+  _ftp_start "$port"
+
+  if ftp_running; then
+    ok "FTP running (port $port)"
+  else
+    err "failed to start FTP"
+    msg "  check logs: javix logs ftp"
+  fi
+}
+
+stop_ftp(){
+  if ftp_running; then
+    msg "stopping FTP server..."
+    _ftp_kill
+    ok "FTP stopped"
+  else
+    msg "FTP already stopped"
+  fi
+}
+
+restart_ftp(){
+  local port
+  port="$(_parse_ftp_port "$@")"
+
+  msg "restarting FTP server on port $port..."
+  _ftp_kill
+  _ftp_start "$port"
+
+  if ftp_running; then
+    ok "FTP restarted (port $port)"
+  else
+    err "FTP failed to restart"
+    msg "  check logs: javix logs ftp"
+  fi
+}
+
+########################################
+# JAVA (init java = grun -s)
+########################################
+
+java_running(){
+  pgrep -f java >/dev/null 2>&1
+}
+
+init_java(){
+  ensure_setup
+  msg "starting Java grun shell..."
+  grun -s
+}
+
+########################################
+# LOGS
+########################################
+
+show_logs(){
+  mkdir -p "$LOG_DIR"
+  case "${1:-}" in
+    gui|vnc|display)
+      echo "=== VNC log ==="
+      cat "$LOG_DIR/vnc.log" 2>/dev/null || msg "no VNC log yet"
+      echo
+      echo "=== Fluxbox log ==="
+      cat "$LOG_DIR/fluxbox.log" 2>/dev/null || msg "no fluxbox log yet"
+      ;;
+    ftp|files)
+      echo "=== FTP log (last 40 lines) ==="
+      tail -40 "$LOG_DIR/ftp.log" 2>/dev/null || msg "no FTP log yet"
+      ;;
+    *)
+      echo "Usage: javix logs gui|ftp"
+      ;;
+  esac
+}
+
+########################################
+# STATUS
+########################################
+
+status_gui(){
+  gui_running && echo "GUI  : running (5901)" || echo "GUI  : stopped"
+}
+
+status_ftp(){
+  if ftp_running; then
+    local port
+    port=$(ps -o args= -p "$(pgrep -f 'tcpsvd.*ftpd' | head -1)" 2>/dev/null \
+      | grep -oE '0\.0\.0\.0 [0-9]+' | awk '{print $2}')
+    echo "FTP  : running (${port:-$DEFAULT_FTP_PORT})"
+  else
+    echo "FTP  : stopped"
+  fi
+}
+
+status_java(){
+  if [ -d "$JAVA_DIR" ]; then
+    echo "JAVA : installed ($JAVA_DIR)"
+  else
+    echo "JAVA : not installed"
+  fi
+  java_running && echo "JAVA : process running" || echo "JAVA : no active process"
+}
+
+status_all(){
+  echo
+  echo "JAVIX STATUS  (v$VERSION)"
+  echo "-------------------------"
+  status_gui
+  status_ftp
+  status_java
+  [ -f "$SETUP_MARKER" ] && echo "SETUP: complete" || echo "SETUP: not done"
+  echo
+}
+
+########################################
+# KILLALL
+########################################
+
+kill_all(){
+  msg "stopping all services..."
+  _ftp_kill
+  _gui_kill
+  ok "all services stopped"
+}
+
+########################################
+# CLI
+########################################
+
+case "${1:-}" in
+
+  start)
+    case "${2:-}" in
+      display|gui|vnc) start_gui ;;
+      ftp|files)       shift 2; start_ftp "$@" ;;
+      *)               help ;;
+    esac
+    ;;
+
+  stop)
+    case "${2:-}" in
+      display|gui|vnc) stop_gui ;;
+      ftp|files)       stop_ftp ;;
+      *)               help ;;
+    esac
+    ;;
+
+  restart)
+    case "${2:-}" in
+      display|gui|vnc) restart_gui ;;
+      ftp|files)       shift 2; restart_ftp "$@" ;;
+      all|"")
+        restart_gui
+        restart_ftp
+        ;;
+      *) help ;;
+    esac
+    ;;
+
+  status)
+    case "${2:-}" in
+      display|gui|vnc) status_gui ;;
+      ftp|files)       status_ftp ;;
+      java)            status_java ;;
+      all|"")          status_all ;;
+      *)               help ;;
+    esac
+    ;;
+
+  logs)
+    show_logs "${2:-}"
+    ;;
+
+  setup)
+    case "${2:-}" in
+      check)  setup_check ;;
+      reset)
+        rm -f "$SETUP_MARKER"
+        ok "setup marker removed — will reinstall on next run"
+        ;;
+      java)
+        rm -f "$JAVA_DIR/.compiled"
+        rm -rf "$JAVA_DIR"
+        setup_java
+        ;;
+      "")     run_setup ;;
+      *)      help ;;
+    esac
+    ;;
+
+  killall)
+    kill_all
+    ;;
+
+  init)
+    case "${2:-}" in
+      java) init_java ;;
+      *)    help ;;
+    esac
+    ;;
+
+  --version|-v)
+    echo "javix $VERSION"
+    ;;
+
+  help|--help|-h)
+    help
+    ;;
+
+  *)
+    help
+    ;;
+
+esac
