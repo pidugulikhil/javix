@@ -2,28 +2,45 @@
 
 VERSION="1.2"
 
-DEFAULT_FTP_PORT=2121                                                            DISPLAY_NUM=":1"
-                                                                                 JAVIX_HOME="$HOME/.cybreign/javix"
-JAVA_DIR="$JAVIX_HOME/java8"                                                     JAVA_TAR="OpenJDK8U-jdk_aarch64_linux_hotspot_8u412b08.tar.gz"
+DEFAULT_FTP_PORT=2121
+DISPLAY_NUM=":1"
+JAVIX_HOME="$HOME/.cybreign/javix"                                                                                 
+JAVA_DIR="$JAVIX_HOME/java8"                                                     
+JAVA_TAR="OpenJDK8U-jdk_aarch64_linux_hotspot_8u412b08.tar.gz"
 JAVA_URL="https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/$JAVA_TAR"
-SETUP_MARKER="$JAVIX_HOME/.setup_complete"                                       LOG_DIR="$JAVIX_HOME/logs"
-                                                                                 msg(){  printf '[javix] %s\n' "$1"; }
-err(){  printf '[javix] ERROR: %s\n' "$1" >&2; }                                 ok(){   printf '[javix] ✓ %s\n' "$1"; }
+SETUP_MARKER="$JAVIX_HOME/.setup_complete"                                       
+LOG_DIR="$JAVIX_HOME/logs"
+                                                                                 
+msg(){  printf '[javix] %s\n' "$1"; }
+err(){  printf '[javix] ERROR: %s\n' "$1" >&2; }                                 
+ok(){   printf '[javix] ✓ %s\n' "$1"; }
 warn(){ printf '[javix] WARN: %s\n' "$1"; }                                      
-########################################                                         # HELP
 ########################################                                         
-help(){                                                                          cat <<EOF
-                                                                                 javix v$VERSION — Java Virtual X Execution
-                                                                                 Usage:
-                                                                                   javix init java
-                                                                                   javix start   display|gui|vnc
-  javix stop    display|gui|vnc                                                    javix restart display|gui|vnc
-                                                                                   javix start   ftp|files [--port PORT]
-  javix stop    ftp|files                                                          javix restart ftp|files [--port PORT]
-                                                                                   javix restart all
-                                                                                   javix status
-  javix status gui                                                                 javix status ftp
-  javix status java                                                                javix status all
+# HELP
+########################################                                         
+help(){                                                                          
+cat <<EOF
+                                                                                 
+javix v$VERSION — Java Virtual X Execution
+                                                                                 
+Usage:
+                                                                                   
+  javix init java
+  javix start   display|gui|vnc
+  javix stop    display|gui|vnc
+  javix restart display|gui|vnc
+  
+  javix start   ftp|files [--port PORT]
+  javix stop    ftp|files
+
+  javix restart ftp|files [--port PORT]
+  javix restart all
+
+  javix status
+  javix status ftp
+  javix status gui                                                                 
+  javix status java                                                                
+  javix status all
 
   javix logs gui
   javix logs ftp
